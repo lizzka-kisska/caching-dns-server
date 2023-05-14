@@ -20,7 +20,6 @@ def main():
         except ConnectionRefusedError:
             print('The server is unavailable')
             sys.exit(0)
-        # print(sock.recv(65535).decode("utf-8"))
 
 
 if __name__ == '__main__':

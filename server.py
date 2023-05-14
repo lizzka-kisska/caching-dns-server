@@ -1,3 +1,4 @@
+import datetime
 import json
 import socket
 
@@ -23,16 +24,37 @@ def parse_recv(line):
                b'the record must be of type ns, a, soa\n', ''
 
 
-def check_cache(host, req_type):
+def check_cache(host, req_type, check_fresh):
     tmp = dict()
     for i in DICTIONARY['domain']:
         if host in i.keys() and req_type in i[host].keys():
-            tmp = i[host]
-            return tmp
+            if check_fresh and check_ttl(i[host]['time'], i[host]['ttl']):
+                tmp = i[host]
+                return tmp
+            elif not check_fresh:
+                tmp = i[host]
+                return tmp
     return tmp
 
 
-def dump_data(data, host):
+def check_ttl(req_time, ttl):
+    date, time = req_time.split(' ')
+    d, t = date.split('-'), time.split(':')
+    time1 = datetime.datetime.now()
+    time2 = datetime.datetime(int(d[0]), int(d[1]), int(d[2]), int(t[0]), int(t[1]), int(t[2].split('.')[0]))
+
+    time_res = time1 - time2
+
+    if int(ttl) - time_res.total_seconds() >= 0:
+        return True
+    return False
+
+
+def dump_data(data, host, req_type):
+    for i in range(len(DICTIONARY['domain'])):
+        if host in DICTIONARY['domain'][i].keys() and req_type in DICTIONARY['domain'][i][host].keys():
+            DICTIONARY['domain'].pop(i)
+            break
     DICTIONARY['domain'].append({host: data})
     with open('cache.json', 'w', encoding="utf-8") as f:
         json.dump(DICTIONARY, f)
@@ -40,17 +62,20 @@ def dump_data(data, host):
 
 def return_result(host, req_type):
     host_to_check = host[:-1]
-    new_dict = check_cache(host_to_check, req_type)
+    new_dict = check_cache(host_to_check, req_type, True)
     result = b''
     if new_dict:
-        result += b'---CACHE NS---\n'
+        result += b'---CACHE RECORD---\n'
     else:
         new_dict = request_data(host_to_check, req_type)
         if new_dict and 'no servers' not in new_dict.keys():
-            dump_data(new_dict, host_to_check)
-            result += b'---FRESH NS---\n'
+            dump_data(new_dict, host_to_check, req_type)
+            result += b'---FRESH RECORD---\n'
         elif 'no servers' in new_dict.keys():
-            return b'No servers could be reached and there is no data in the cache\n'
+            new_dict = check_cache(host_to_check, req_type, False)
+            if not new_dict:
+                return b'No servers could be reached and there is no data in the cache\n'
+            result += b'---CACHE RECORD---\n'
         else:
             return b'Wrong domain\n'
     match req_type:
